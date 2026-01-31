@@ -1,6 +1,7 @@
 # Imagen base mínima y oficial
 #FROM node:18-alpine
 FROM node:20-alpine
+RUN apk update && apk upgrade
 
 WORKDIR /app
 
