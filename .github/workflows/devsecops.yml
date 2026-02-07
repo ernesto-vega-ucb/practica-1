@@ -2,7 +2,7 @@ name: DevSecOps CI/CD Pipeline
 
 on:
   push:
-    branches: [ "master" ]
+    branches: [ "main" ]
   pull_request:
 
 jobs:
@@ -14,67 +14,83 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    # 2. Preparar Docker
+    # 2. Setup Node.js (OBLIGATORIO)
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
+
+    # 3. Preparar Docker
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
-    # 3. CI – Tests por microservicio
-    - name: Run tests (users-service)
+    # 4. CI + SCA – users-service
+    - name: CI users-service
       run: |
         cd users-service
         npm ci
+        npm audit --audit-level=critical
+        npm run lint || true
         npm test
 
-    - name: Run tests (academic-service)
+    # 5. CI + SCA – academic-service
+    - name: CI academic-service
       run: |
         cd academic-service
         npm ci
+        npm audit --audit-level=critical
+        npm run lint || true
         npm test
 
-    - name: Run tests (api-gateway)
+    # 6. CI + SCA – api-gateway
+    - name: CI api-gateway
       run: |
         cd api-gateway
         npm ci
+        npm audit --audit-level=critical
+        npm run lint || true
         npm test
-    
-    # 4. 🔐 SAST – Análisis estático de código
+
+    # 7. 🔐 SAST – Semgrep
+    - name: Install Semgrep
+      run: |
+        python3 -m pip install --upgrade pip
+        pip install semgrep
+
     - name: SAST users-service
       run: |
         cd users-service
-        npx semgrep --config=auto --severity=ERROR
+        semgrep --config=auto --severity=ERROR
 
     - name: SAST academic-service
       run: |
         cd academic-service
-        npx semgrep --config=auto --severity=ERROR
+        semgrep --config=auto --severity=ERROR
 
     - name: SAST api-gateway
       run: |
         cd api-gateway
-        npx semgrep --config=auto --severity=ERROR
+        semgrep --config=auto --severity=ERROR
 
-      
-    # 4. Build – Construir imágenes Docker
+    # 8. Build – Docker
     - name: Build images with Docker Compose
       run: docker compose build
 
-    # 5. Seguridad – Escaneo de imágenes (Trivy)
-    # Seguridad – Trivy users-service
+    # 9. 🔍 Container Security – Trivy
     - name: Trivy scan users-service
       uses: aquasecurity/trivy-action@0.20.0
       with:
         image-ref: users-service:latest
         severity: CRITICAL
         exit-code: 1
-    # Seguridad – Trivy academic-service
+
     - name: Trivy scan academic-service
       uses: aquasecurity/trivy-action@0.20.0
       with:
-       image-ref: academic-service:latest
-       severity: CRITICAL
-       exit-code: 1
+        image-ref: academic-service:latest
+        severity: CRITICAL
+        exit-code: 1
 
-# Seguridad – Trivy api-gateway
     - name: Trivy scan api-gateway
       uses: aquasecurity/trivy-action@0.20.0
       with:
@@ -82,20 +98,20 @@ jobs:
         severity: CRITICAL
         exit-code: 1
 
-# 6. CD – Levantar sistema (solo si todo pasó)
+    # 10. CD – Deploy
     - name: Deploy with Docker Compose
       if: success()
       run: docker compose up -d
 
-    # 7. Smoke tests (API Gateway)
+    # 11. Smoke tests
     - name: Smoke test API Gateway
       if: success()
       run: |
-        sleep 10
+        sleep 15
         curl -f http://localhost:3000/users
         curl -f http://localhost:3000/courses
 
-    # 8. Limpieza
+    # 12. Limpieza
     - name: Shutdown services
       if: always()
       run: docker compose down
